@@ -9,7 +9,7 @@ using Debug = UnityEngine.Debug;
 public class CIBuildEditor : EditorWindow
 {
     private string loadPath = string.Empty;
-    private string buildPath = string.Empty;  
+    private string buildPath = string.Empty;
     private BuildTarget buildTarget = BuildTarget.Android;
     private string productName = string.Empty;
     private string autherName = string.Empty;
@@ -17,7 +17,7 @@ public class CIBuildEditor : EditorWindow
     private Process buildProcess;
     private static GUIStyle helpStyle;
 
-    
+
     [MenuItem("Tool/Unity_CI")]
     public static void SetWindow()
     {
@@ -25,7 +25,7 @@ public class CIBuildEditor : EditorWindow
         window.minSize = new Vector2(400, 400);
         window.maxSize = new Vector2(1000, 1000);
     }
-    
+
     private void OnEnable()
     {
         loadPath = EditorPrefs.GetString("CIBuildEditor_LoadPath", string.Empty);
@@ -33,7 +33,7 @@ public class CIBuildEditor : EditorWindow
         buildTarget = (BuildTarget)EditorPrefs.GetInt("CIBuildEditor_BuildTarget", (int)BuildTarget.Android);
         productName = EditorPrefs.GetString("CIBuildEditor_ProductName", string.Empty);
         autherName = EditorPrefs.GetString("CIBuildEditor_AutherName", string.Empty);
-        
+
         // loadPath 있으면 프로젝트 이름 자동 로드
         if (!string.IsNullOrEmpty(loadPath))
             LoadProjectName();
@@ -47,7 +47,7 @@ public class CIBuildEditor : EditorWindow
         EditorPrefs.SetString("CIBuildEditor_ProductName", productName);
         EditorPrefs.SetString("CIBuildEditor_AutherName", autherName);
     }
-    
+
     // Editor 메소드
     private void OnGUI()
     {
@@ -59,7 +59,7 @@ public class CIBuildEditor : EditorWindow
                 richText = true,
             };
         }
-        
+
         EditorGUILayout.LabelField(
             "Load Path는 빌드 하고싶은 프로젝트의 경로 \n" +
             "Build Path는 빌드 후 생성 된 폴더의 최상위 폴더입니다\n" +
@@ -67,9 +67,9 @@ public class CIBuildEditor : EditorWindow
             helpStyle,
             new GUILayoutOption[] { GUILayout.Height(100) }
         );
-        
+
         EditorGUILayout.Space(30);
-        
+
         // 경로 설정
         EditorGUILayout.LabelField("경로 설정", EditorStyles.boldLabel);
         EditorGUILayout.Separator();
@@ -82,11 +82,11 @@ public class CIBuildEditor : EditorWindow
         EditorGUILayout.LabelField("빌드 설정", EditorStyles.boldLabel);
         SetBuildSetting();
         EditorGUILayout.Space(30);
-        
-        
-        
+
+
+
         GUI.enabled = !string.IsNullOrEmpty(loadPath) && !string.IsNullOrEmpty(buildPath);
-        if(GUILayout.Button("Build",GUILayout.Height(40),GUILayout.Width(200)))
+        if (GUILayout.Button("Build", GUILayout.Height(40), GUILayout.Width(200)))
         {
             OnClickBuild();
         }
@@ -98,9 +98,9 @@ public class CIBuildEditor : EditorWindow
 
     #region Test
 
-    private string myString = string.Empty; 
-    private int myInt = 0; 
-    private float myFloat = 0; 
+    private string myString = string.Empty;
+    private int myInt = 0;
+    private float myFloat = 0;
     private Vector2 scroll;
     private void ExampleEditorCode()
     {
@@ -111,7 +111,7 @@ public class CIBuildEditor : EditorWindow
         EditorGUILayout.LabelField("큰 레이블", EditorStyles.largeLabel);
         EditorGUILayout.LabelField("워드랩 레이블", EditorStyles.wordWrappedLabel);
         EditorGUILayout.LabelField("링크 스타일", EditorStyles.linkLabel);
-    
+
         // 헤더 스타일 (Foldout 섹션 제목 느낌)
         EditorGUILayout.LabelField("헤더", EditorStyles.boldLabel);
 
@@ -119,7 +119,7 @@ public class CIBuildEditor : EditorWindow
         EditorGUILayout.HelpBox("참고 사항입니다.", MessageType.Info);       // ℹ️ 파란 아이콘
         EditorGUILayout.HelpBox("주의가 필요합니다.", MessageType.Warning);  // ⚠️ 노란 아이콘
         EditorGUILayout.HelpBox("오류가 발생했습니다.", MessageType.Error);  // ❌ 빨간 아이콘
-        
+
         // 기본 텍스트 필드
         myString = EditorGUILayout.TextField("레이블", myString);
 
@@ -131,9 +131,9 @@ public class CIBuildEditor : EditorWindow
 
         // 딜레이 적용 (Enter 누를 때만 값 반영)
         myString = EditorGUILayout.DelayedTextField("딜레이 텍스트", myString);
-        myInt    = EditorGUILayout.DelayedIntField("딜레이 정수", myInt);
-        myFloat  = EditorGUILayout.DelayedFloatField("딜레이 실수", myFloat);
-        
+        myInt = EditorGUILayout.DelayedIntField("딜레이 정수", myInt);
+        myFloat = EditorGUILayout.DelayedFloatField("딜레이 실수", myFloat);
+
         // 가로 배치
         EditorGUILayout.BeginHorizontal();
         {
@@ -156,8 +156,8 @@ public class CIBuildEditor : EditorWindow
             for (int i = 0; i < 30; i++)
                 EditorGUILayout.LabelField($"항목 {i}");
         }
-        EditorGUILayout.EndScrollView();    
-        
+        EditorGUILayout.EndScrollView();
+
         // 버튼 크기 지정
         GUILayout.Button("큰 버튼", GUILayout.Width(200), GUILayout.Height(40));
 
@@ -170,26 +170,26 @@ public class CIBuildEditor : EditorWindow
         GUILayout.FlexibleSpace();  // 여백 채움
         GUILayout.Button("오른쪽 끝");
         EditorGUILayout.EndHorizontal();
-        
+
         // Inspector처럼 보이는 섹션
         EditorGUILayout.BeginVertical("helpbox");
         EditorGUILayout.LabelField("설정", EditorStyles.boldLabel);
         EditorGUILayout.Space(4);
-        myInt   = EditorGUILayout.IntField("수치", myInt);
+        myInt = EditorGUILayout.IntField("수치", myInt);
         myFloat = EditorGUILayout.Slider("슬라이더", myFloat, 0f, 1f);
         EditorGUILayout.EndVertical();
     }
-    
+
     #endregion
-    
+
 
     private void SetLoadPath()
     {
         EditorGUILayout.BeginHorizontal();
-    
+
         // 경로 표시 필드 (읽기 전용처럼)
         EditorGUILayout.TextField("Load Path", loadPath);
-    
+
         // 찾아보기 버튼
         if (GUILayout.Button("...", GUILayout.Width(30)))
         {
@@ -198,7 +198,7 @@ public class CIBuildEditor : EditorWindow
                 loadPath,    // 초기 경로 (빈 문자열이면 기본 위치)
                 ""             // 기본 폴더명
             );
-        
+
             // 취소하면 빈 문자열 반환 → 기존 값 유지
             if (!string.IsNullOrEmpty(selected))
             {
@@ -206,7 +206,7 @@ public class CIBuildEditor : EditorWindow
                 LoadProjectName();
             }
         }
-        
+
         EditorGUILayout.EndHorizontal();
     }
 
@@ -214,7 +214,7 @@ public class CIBuildEditor : EditorWindow
     {
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.TextField("Build Path", buildPath);
-        
+
         // 찾아보기 버튼
         if (GUILayout.Button("...", GUILayout.Width(30)))
         {
@@ -223,14 +223,14 @@ public class CIBuildEditor : EditorWindow
                 buildPath,    // 초기 경로 (빈 문자열이면 기본 위치)
                 ""             // 기본 폴더명
             );
-        
+
             // 취소하면 빈 문자열 반환 → 기존 값 유지
             if (!string.IsNullOrEmpty(selected))
             {
                 buildPath = selected;
             }
         }
-        
+
         EditorGUILayout.EndHorizontal();
     }
 
@@ -243,7 +243,7 @@ public class CIBuildEditor : EditorWindow
             Debug.LogError("ProjectSettings.asset 파일을 찾을 수 없습니다.");
             return;
         }
-        
+
         string[] lines = File.ReadAllLines(_projectSettingPath);
         foreach (var line in lines)
         {
@@ -261,31 +261,31 @@ public class CIBuildEditor : EditorWindow
         autherName = EditorGUILayout.TextField("빌드 생성자", autherName);
         productName = EditorGUILayout.TextField("빌드 파일 이름", productName);
     }
-    
-    
+
+
 
     private void OnClickBuild()
     {
         string shPath = Path.Combine(Application.dataPath, "../AutoBuild.sh");
         shPath = Path.GetFullPath(shPath);
-        
-       string _cIBuilderPath = Path.Combine(Application.dataPath, "Editor/CIBuilder.cs");
-       
-        #if UNITY_EDITOR_WIN
+
+        string _cIBuilderPath = Path.Combine(Application.dataPath, "Editor/CIBuilder.cs");
+
+#if UNITY_EDITOR_WIN
             string fileName = "cmd.exe";
             string arguments = $"/c {_shPath} \"{loadPath}\" \"{buildPath}\" \"{buildTarget}\" \"{_cIBuilderPath}\" \"{productName}\" \"{autherName}\"";
-        #elif UNITY_EDITOR_OSX
-            string fileName = "/bin/bash";
-            string arguments = $"{shPath} \"{loadPath}\" \"{buildPath}\" \"{buildTarget}\" \"{_cIBuilderPath}\" \"{productName}\" \"{autherName}\"";
-            
-        #endif
-        
+#elif UNITY_EDITOR_OSX
+        string fileName = "/bin/bash";
+        string arguments = $"{shPath} \"{loadPath}\" \"{buildPath}\" \"{buildTarget}\" \"{_cIBuilderPath}\" \"{productName}\" \"{autherName}\"";
+
+#endif
+
         Debug.Log($"arguments: {arguments}");
-        
+
         var process = new Process
         {
             StartInfo = new ProcessStartInfo()
-            {   
+            {
                 StandardOutputEncoding = System.Text.Encoding.UTF8,
                 StandardErrorEncoding = System.Text.Encoding.UTF8,
                 FileName = fileName,
@@ -304,8 +304,9 @@ public class CIBuildEditor : EditorWindow
                 Debug.Log(e.Data);
             }
         };
-        
-        process.ErrorDataReceived += (sender, e) => {
+
+        process.ErrorDataReceived += (sender, e) =>
+        {
             if (!string.IsNullOrEmpty(e.Data))
                 Debug.LogError(e.Data);
         };
@@ -313,11 +314,11 @@ public class CIBuildEditor : EditorWindow
 
         process.Start();
         process.BeginOutputReadLine();
-        process.BeginErrorReadLine();   
-        
+        process.BeginErrorReadLine();
+
         buildProcess = process;
         EditorApplication.update += CheckBuildProcess;
-        
+
     }
 
     private void CheckBuildProcess()
@@ -327,6 +328,12 @@ public class CIBuildEditor : EditorWindow
             Debug.Log($"빌드 완료 - Exit Code : {buildProcess.ExitCode}");
             buildProcess = null;
             EditorApplication.update -= CheckBuildProcess;
+        }
+        else
+        {
+            // 빌드 중일 때 프로그레스 바 애니메이션
+            float progress = (float)(EditorApplication.timeSinceStartup % 1.0);
+            EditorUtility.DisplayProgressBar("빌드 중", "Unity batchmode 실행 중...", progress);
         }
     }
 }
