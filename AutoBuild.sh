@@ -18,11 +18,24 @@ BRANCH_NAME=${9:-""}
 PROJECT_NAME=$(basename "$LOAD_PATH")
 BUILD_PATH="$2/$PROJECT_NAME/${BUILD_TARGET}_${AUTHOR_NAME}"
 
-UNITY_VERSION=$(grep "m_EditorVersion:" "$LOAD_PATH/ProjectSettings/ProjectVersion.txt" | awk '{print $2}')
+UNITY_VERSION=$(grep "m_EditorVersion:" "$LOAD_PATH/ProjectSettings/ProjectVersion.txt" | awk '{print $2}' | tr -d '\r')
+
+# 설치 경로 후보 순서대로 탐색
 UNITY_PATH="/Applications/Unity/Hub/Editor/$UNITY_VERSION/Unity.app/Contents/MacOS/Unity"
+if [ ! -f "$UNITY_PATH" ]; then
+    UNITY_PATH="/Applications/Unity/$UNITY_VERSION/Unity.app/Contents/MacOS/Unity"
+fi
+if [ ! -f "$UNITY_PATH" ]; then
+    FOUND=$(mdfind "kMDItemFSName == 'Unity.app'" 2>/dev/null | grep "$UNITY_VERSION" | head -1)
+    [ -n "$FOUND" ] && UNITY_PATH="$FOUND/Contents/MacOS/Unity"
+fi
 
 if [ ! -f "$UNITY_PATH" ]; then
-    echo "Unity 실행파일을 찾을 수 없습니다: $UNITY_PATH"
+    echo "Unity $UNITY_VERSION 이(가) 설치되어 있지 않습니다."
+    echo "Unity Hub에서 해당 버전을 설치하세요:"
+    echo "  1. Unity Hub 실행 → Installs → Install Editor"
+    echo "  2. Archive 탭에서 $UNITY_VERSION 검색 후 설치"
+    echo "  또는 CLI: \"/Applications/Unity Hub.app/Contents/MacOS/Unity Hub\" -- --headless install --version $UNITY_VERSION"
     exit 1
 fi
 
@@ -45,7 +58,6 @@ echo "PRODUCT_NAME:   $PRODUCT_NAME"
 echo "CLEAN_BUILD:    $CLEAN_BUILD"
 echo "IS_DEVELOPMENT: $IS_DEVELOPMENT"
 echo "BRANCH_NAME:    ${BRANCH_NAME:-(생략)}"
-echo "GIT_USER:       ${GIT_USER:-(미설정)}"
 echo "======================"
 
 # Git 최신화
@@ -57,52 +69,25 @@ if [ -n "$BRANCH_NAME" ]; then
         exit 1
     fi
 
-    # 계정 정보가 있으면 임시 credential helper 스크립트 생성
-    CRED_SCRIPT=""
-    if [ -n "$GIT_USER" ] && [ -n "$GIT_TOKEN" ]; then
-        REMOTE_URL=$(git -C "$LOAD_PATH" remote get-url origin 2>/dev/null)
-        if echo "$REMOTE_URL" | grep -q "^git@"; then
-            echo "경고: SSH 원격 URL은 사용자명/토큰 인증을 지원하지 않습니다."
-            echo "      SSH 키를 등록하거나 HTTPS URL로 변경하세요: $REMOTE_URL"
-        else
-            echo "Git 계정 적용: $GIT_USER"
-            CRED_SCRIPT=$(mktemp /tmp/git_cred_XXXXXX)
-            chmod +x "$CRED_SCRIPT"
-            printf '#!/bin/bash\necho "username=%s"\necho "password=%s"\n' \
-                "$GIT_USER" "$GIT_TOKEN" > "$CRED_SCRIPT"
-            # 빈 값으로 먼저 설정 → 글로벌/시스템 helper(osxkeychain 등) 무력화
-            git -C "$LOAD_PATH" config --local credential.helper ""
-            git -C "$LOAD_PATH" config --local --add credential.helper "$CRED_SCRIPT"
-            export GIT_TERMINAL_PROMPT=0
-        fi
-    fi
-
-    _git_cleanup() {
-        if [ -n "$CRED_SCRIPT" ]; then
-            git -C "$LOAD_PATH" config --local --unset-all credential.helper 2>/dev/null
-            rm -f "$CRED_SCRIPT"
-        fi
-    }
-
     git -C "$LOAD_PATH" fetch origin
     if [ $? -ne 0 ]; then
-        echo "git fetch 실패 — 네트워크, 권한 또는 계정 정보를 확인하세요"
-        _git_cleanup; exit 1
+        echo "git fetch 실패 — 네트워크 또는 권한을 확인하세요"
+        exit 1
     fi
 
+    git -C "$LOAD_PATH" stash
     git -C "$LOAD_PATH" checkout "$BRANCH_NAME"
     if [ $? -ne 0 ]; then
         echo "브랜치 전환 실패: $BRANCH_NAME"
-        _git_cleanup; exit 1
+        exit 1
     fi
 
     git -C "$LOAD_PATH" pull origin "$BRANCH_NAME"
     if [ $? -ne 0 ]; then
-        echo "git pull 실패 — 네트워크, 권한 또는 계정 정보를 확인하세요"
-        _git_cleanup; exit 1
+        echo "git pull 실패 — 네트워크 또는 권한을 확인하세요"
+        exit 1
     fi
 
-    _git_cleanup
     echo "Git 최신화 완료 ($(git -C "$LOAD_PATH" rev-parse --short HEAD))"
     echo "================================"
 fi
@@ -123,66 +108,26 @@ $UNITY_PATH \
   -customBuildPath "$BUILD_PATH" \
   -productName "$PRODUCT_NAME" \
   -logFile "$BUILD_PATH/build.log" \
-  $EXTRA_FLAGS
+  $EXTRA_FLAGS &
+UNITY_PID=$!
 
+# build.log 파일을 실시간 스트리밍 (파이프 버퍼링 없이 직접 출력)
+tail -F "$BUILD_PATH/build.log" &
+TAIL_PID=$!
+
+wait $UNITY_PID
 UNITY_EXIT=$?
 UNITY_TIME=$((SECONDS - START_TIME))
 
+kill $TAIL_PID 2>/dev/null
+wait $TAIL_PID 2>/dev/null
+
 if [ $UNITY_EXIT -ne 0 ]; then
-    echo "Unity 빌드 실패 (${UNITY_TIME}초) — 마지막 로그:"
-    tail -50 "$BUILD_PATH/build.log"
+    echo "Unity 빌드 실패 (${UNITY_TIME}초)"
     exit 1
 fi
 
 echo "Unity 빌드 완료: ${UNITY_TIME}초"
-
-# iOS: Xcode 빌드로 실제 .ipa 생성
-if [ "$BUILD_TARGET" = "iOS" ]; then
-    echo "=== Xcode 빌드 시작 ==="
-
-    XCODE_PROJECT="$BUILD_PATH/Unity-iPhone.xcodeproj"
-    ARCHIVE_PATH="$BUILD_PATH/archive.xcarchive"
-    IPA_PATH="$BUILD_PATH/ipa"
-    EXPORT_PLIST="$BUILD_PATH/ExportOptions.plist"
-
-    if [ ! -d "$XCODE_PROJECT" ]; then
-        echo "Xcode 프로젝트를 찾을 수 없습니다: $XCODE_PROJECT"
-        exit 1
-    fi
-
-    # 서명 없이 빌드 (CI 환경 기본값 — 배포 시 CODE_SIGN_IDENTITY 설정 필요)
-    cat > "$EXPORT_PLIST" << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>method</key>
-    <string>development</string>
-    <key>compileBitcode</key>
-    <false/>
-</dict>
-</plist>
-EOF
-
-    xcodebuild \
-        -project "$XCODE_PROJECT" \
-        -scheme "Unity-iPhone" \
-        -configuration "Release" \
-        -archivePath "$ARCHIVE_PATH" \
-        archive \
-        CODE_SIGN_IDENTITY="" \
-        CODE_SIGNING_REQUIRED=NO \
-        CODE_SIGNING_ALLOWED=NO \
-        | grep -E "^(error:|warning:|Build succeeded|** ARCHIVE)"
-
-    if [ $? -ne 0 ]; then
-        echo "Xcode archive 실패 — 서명(Code Signing) 설정을 확인하세요"
-        exit 1
-    fi
-
-    XCODE_TIME=$((SECONDS - START_TIME - UNITY_TIME))
-    echo "Xcode 빌드 완료: ${XCODE_TIME}초"
-fi
 
 TOTAL_TIME=$((SECONDS - START_TIME))
 echo "빌드 성공: $BUILD_PATH (총 ${TOTAL_TIME}초)"

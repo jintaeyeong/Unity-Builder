@@ -79,7 +79,7 @@ public class CIBuilder
             ? Il2CppCodeGeneration.OptimizeSize
             : Il2CppCodeGeneration.OptimizeSpeed;
         PlayerSettings.SetIl2CppCodeGeneration(NamedBuildTarget.iOS, codeGen);
-
+ 
         PlayerSettings.stripEngineCode = !isDevelopment;
     }
 
