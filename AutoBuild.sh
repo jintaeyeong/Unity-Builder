@@ -111,8 +111,9 @@ $UNITY_PATH \
   $EXTRA_FLAGS &
 UNITY_PID=$!
 
-# build.log 파일을 실시간 스트리밍 (파이프 버퍼링 없이 직접 출력)
-tail -F "$BUILD_PATH/build.log" &
+# build.log 실시간 스트리밍 — tail -F는 stdout이 파일일 때 8KB 블록 버퍼링됨
+# perl $|=1 로 autoflush 강제 → 줄 단위 즉시 출력
+perl -e '$|=1; open my $f,"<",$ARGV[0] or die; while(1){ print while <$f>; select undef,undef,undef,0.1 }' "$BUILD_PATH/build.log" &
 TAIL_PID=$!
 
 wait $UNITY_PID

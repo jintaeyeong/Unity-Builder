@@ -30,16 +30,19 @@ public class CIBuildEditor : EditorWindow
     // macOS TCC는 실제 컴파일된 바이너리일 때만 .app 번들 FDA를 인식함
     // 쉘스크립트(#!/bin/bash)는 실제 프로세스가 /bin/bash로 뜨기 때문에 FDA가 적용 안 됨
     // → C 소스를 Mac Mini에서 cc로 컴파일해 진짜 바이너리로 만듦
+    // system()은 /bin/sh -c 경유로 실행되어 FDA 상속 체인이 끊김
+    // fork+execvp로 bash를 직접 실행하면 ci_worker의 FDA가 그대로 상속됨
     private const string CIWorkerCSource =
         "#include <stdlib.h>\n" +
         "#include <stdio.h>\n" +
         "#include <unistd.h>\n" +
+        "#include <fcntl.h>\n" +
         "#include <sys/wait.h>\n" +
         "\n" +
         "int main(void) {\n" +
         "    const char *home = getenv(\"HOME\");\n" +
         "    if (!home) home = \"/tmp\";\n" +
-        "    char req[512], run[512], log[512], done[512], cmd[1200];\n" +
+        "    char req[512], run[512], log[512], done[512];\n" +
         "    snprintf(req,  sizeof(req),  \"%s/.ci_request\",   home);\n" +
         "    snprintf(run,  sizeof(run),  \"%s/.ci_running\",   home);\n" +
         "    snprintf(log,  sizeof(log),  \"%s/.ci_build.log\", home);\n" +
@@ -47,11 +50,18 @@ public class CIBuildEditor : EditorWindow
         "    while (1) {\n" +
         "        if (access(req, F_OK) == 0) {\n" +
         "            rename(req, run);\n" +
-        "            remove(done);\n" +
-        "            remove(log);\n" +
-        "            snprintf(cmd, sizeof(cmd), \"bash '%s' >'%s' 2>&1\", run, log);\n" +
-        "            int ret = system(cmd);\n" +
-        "            int code = WIFEXITED(ret) ? WEXITSTATUS(ret) : 1;\n" +
+        "            remove(done); remove(log);\n" +
+        "            pid_t pid = fork();\n" +
+        "            if (pid == 0) {\n" +
+        "                int fd = open(log, O_WRONLY|O_CREAT|O_TRUNC, 0644);\n" +
+        "                if (fd >= 0) { dup2(fd, STDOUT_FILENO); dup2(fd, STDERR_FILENO); close(fd); }\n" +
+        "                char *args[] = {\"/bin/bash\", run, NULL};\n" +
+        "                execvp(\"/bin/bash\", args);\n" +
+        "                _exit(127);\n" +
+        "            }\n" +
+        "            int status = 0;\n" +
+        "            waitpid(pid, &status, 0);\n" +
+        "            int code = WIFEXITED(status) ? WEXITSTATUS(status) : 1;\n" +
         "            FILE *f = fopen(done, \"w\");\n" +
         "            if (f) { fprintf(f, \"%d\", code); fclose(f); }\n" +
         "            remove(run);\n" +
@@ -134,6 +144,7 @@ public class CIBuildEditor : EditorWindow
 
     private Process buildProcess;
     private double buildStartTime;
+    private bool buildProcessExited = false;
 
     private readonly ConcurrentQueue<(string msg, bool isError)> pendingLogs = new();
     private readonly List<(string msg, bool isError)> buildLogs = new();
@@ -275,7 +286,9 @@ public class CIBuildEditor : EditorWindow
         EditorGUILayout.BeginHorizontal();
         EditorGUILayout.LabelField("빌드 로그", EditorStyles.boldLabel);
         autoScroll = EditorGUILayout.ToggleLeft("자동 스크롤", autoScroll, GUILayout.Width(85));
-        if (GUILayout.Button("지우기", GUILayout.Width(55), GUILayout.Height(17)))
+        if (GUILayout.Button("복사", GUILayout.Width(40), GUILayout.Height(17)))
+            GUIUtility.systemCopyBuffer = string.Join("\n", buildLogs.Select(l => l.msg));
+        if (GUILayout.Button("지우기", GUILayout.Width(45), GUILayout.Height(17)))
             ClearLogs();
         EditorGUILayout.EndHorizontal();
 
@@ -752,6 +765,8 @@ public class CIBuildEditor : EditorWindow
         string appBundleRemote = $"/Users/{user}/Applications/CIBuildWorker.app";
         string appExecRemote   = $"{appBundleRemote}/Contents/MacOS/ci_worker";
 
+        // Aqua 세션 타입으로 제한 → 그래픽 로그인 세션에서만 실행됨
+        // Background 세션은 FDA가 적용 안 됨 (그래픽 세션 밖이라 TCC 컨텍스트가 없음)
         string launchAgentPlist =
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
             "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n" +
@@ -762,6 +777,7 @@ public class CIBuildEditor : EditorWindow
             "    </array>\n" +
             "    <key>RunAtLoad</key><true/>\n" +
             "    <key>KeepAlive</key><true/>\n" +
+            "    <key>LimitLoadToSessionType</key><string>Aqua</string>\n" +
             "</dict></plist>\n";
 
         System.Threading.Tasks.Task.Run(() =>
@@ -787,11 +803,13 @@ public class CIBuildEditor : EditorWindow
 
                 pendingLogs.Enqueue(("LaunchAgent 등록 중...", false));
                 RunSilent("/bin/bash", $"-c \"scp '{localLAPlist}' {user}@{host}:~/Library/LaunchAgents/com.cibuild.worker.plist\"");
-                RunSilent("/bin/bash", $"-c \"ssh {user}@{host} 'launchctl unload ~/Library/LaunchAgents/com.cibuild.worker.plist 2>/dev/null; launchctl load ~/Library/LaunchAgents/com.cibuild.worker.plist'\"");
+                // Aqua 세션(그래픽 로그인)에 bootstrap — gui/UID 도메인
+                RunSilent("/bin/bash", $"-c \"ssh {user}@{host} 'launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.cibuild.worker.plist 2>/dev/null; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cibuild.worker.plist'\"");
 
                 pendingLogs.Enqueue(("설치 완료!", false));
                 pendingLogs.Enqueue(("Mac Mini → 시스템 설정 → 개인 정보 보호 → 전체 디스크 접근 권한", false));
                 pendingLogs.Enqueue(("→ CIBuildWorker.app 이 목록에 없으면 + 클릭해서 추가 후 토글 켜기", false));
+                pendingLogs.Enqueue(("→ 설정 후 Mac Mini에서 로그아웃/로그인 한 번 필요", false));
             }
             catch (Exception ex)
             {
@@ -961,7 +979,6 @@ public class CIBuildEditor : EditorWindow
         }
         if (hasNew && autoScroll) logScroll.y = float.MaxValue;
 
-        bool processJustExited = false;
         if (buildProcess != null && buildProcess.HasExited)
         {
             double elapsed = EditorApplication.timeSinceStartup - buildStartTime;
@@ -977,12 +994,18 @@ public class CIBuildEditor : EditorWindow
             else Debug.LogError(summary);
 
             buildProcess = null;
+            buildProcessExited = true;
+        }
+
+        // 프로세스 종료 후에도 큐가 빌 때까지 계속 실행하다가 구독 해제
+        if (buildProcessExited && pendingLogs.IsEmpty)
+        {
+            buildProcessExited = false;
             EditorApplication.update -= OnEditorUpdate;
-            processJustExited = true;
         }
 
         double now = EditorApplication.timeSinceStartup;
-        if (hasNew || processJustExited || now - lastRepaintTime >= 0.5)
+        if (hasNew || buildProcessExited || now - lastRepaintTime >= 0.5)
         {
             lastRepaintTime = now;
             Repaint();
